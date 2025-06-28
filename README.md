@@ -1,5 +1,7 @@
 # AeroBrakesFC
 
+![Board](preview.png)
+
 # Description
 
 AeroBrakesFC is a flight controller designed to control aerobrake servos. The project was mainly made for the **TARC** Rocketry competition, but can serve as an expirimental devboard.

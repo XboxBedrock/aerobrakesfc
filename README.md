@@ -21,9 +21,13 @@ This was built with the gracious support of the **Hack Club Silicon YSWS**
 - Any project that needs IMU or Barometer
 - Model rocket flight command
 
+## Firmware
+- Reference firmware is in the [`firmware`](./firmware) folder. The main file is found at [`firmware/Core/Src/main.c`](./firmware/Core/Src/main.c)
+- This firmware has drivers for the sensors, implementing the Bosch sensortec library
+
 ## DIY
 - Download the files and build the board
-- Firmware should be custom made for your usecase, but reference firmware will be found in the future at https://github.com/XboxBedrock/aerobrakesfc
+- Firmware should be custom made for your usecase, but reference firmware is found at https://github.com/XboxBedrock/aerobrakesfc
 
 ## License
  

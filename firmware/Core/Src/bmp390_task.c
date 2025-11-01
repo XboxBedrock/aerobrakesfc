@@ -1,0 +1,262 @@
+#include "common_porting.h"
+#include "cmsis_os.h"
+#include "stm32f4xx_hal.h"
+#include "bmp390_task.h"
+#include "./bosch/bmp3.h"
+#include "main.h"
+#include <stdbool.h>
+#include "tim.h"
+
+#if defined(USE_BMP390)
+
+extern volatile uint8_t int1_flag;
+extern volatile uint8_t int2_flag;
+
+static uint8_t dev_addr = 0;
+
+static int16_t currentAngle = 0;
+
+void SetServoAngle(int16_t angle)
+{
+  /* Ensure angle is within valid range */
+  if (angle < 0) angle = 0;
+  if (angle > 180) angle = 180;
+
+  /* Calculate pulse width in microseconds */
+// uint32_t pulse = (angle * 1000 / 180) + 500 + 1000;
+  //uint32_t pulse = (angle * 1000) / 180 + 1000; // Calculate pulse width in microseconds
+  uint32_t pulse = (angle * 1000) / 180 + 1000; // Calculate pulse width in microseconds
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pulse);
+
+  currentAngle = angle;  // Update current angle
+}
+
+
+void bmp3_check_rslt(const char api_name[], int8_t rslt)
+{
+    switch (rslt)
+    {
+        case BMP3_OK:
+
+            /* Do nothing */
+            break;
+        case BMP3_E_NULL_PTR:
+            PDEBUG("API [%s] Error [%d] : Null pointer\r\n", api_name, rslt);
+            break;
+        case BMP3_E_COMM_FAIL:
+            PDEBUG("API [%s] Error [%d] : Communication failure\r\n", api_name, rslt);
+            break;
+        case BMP3_E_INVALID_LEN:
+            PDEBUG("API [%s] Error [%d] : Incorrect length parameter\r\n", api_name, rslt);
+            break;
+        case BMP3_E_DEV_NOT_FOUND:
+            PDEBUG("API [%s] Error [%d] : Device not found\r\n", api_name, rslt);
+            break;
+        case BMP3_E_CONFIGURATION_ERR:
+            PDEBUG("API [%s] Error [%d] : Configuration Error\r\n", api_name, rslt);
+            break;
+        case BMP3_W_SENSOR_NOT_ENABLED:
+            PDEBUG("API [%s] Error [%d] : Warning when Sensor not enabled\r\n", api_name, rslt);
+            break;
+        case BMP3_W_INVALID_FIFO_REQ_FRAME_CNT:
+            PDEBUG("API [%s] Error [%d] : Warning when Fifo watermark level is not in limit\r\n", api_name, rslt);
+            break;
+        default:
+            PDEBUG("API [%s] Error [%d] : Unknown error code\r\n", api_name, rslt);
+            break;
+    }
+}
+
+BMP3_INTF_RET_TYPE bmp3_interface_init(struct bmp3_dev *bmp3, uint8_t intf)
+{
+	int8_t rslt = BMP3_OK;
+
+	if(bmp3 != NULL)
+	{
+		/* Bus configuration : I2C */
+		if (intf == BMP3_I2C_INTF)
+		{
+			PDEBUG("I2C Interface\n");
+			dev_addr = BMP3_ADDR_I2C_PRIM;
+			bmp3->read = SensorAPI_I2Cx_Read;
+			bmp3->write = SensorAPI_I2Cx_Write;
+			bmp3->intf = BMP3_I2C_INTF;
+		}
+		/* Bus configuration : SPI */
+		else if (intf == BMP3_SPI_INTF)
+		{
+			PDEBUG("SPI Interface\n");
+			dev_addr = 0;
+		}
+
+		bmp3->delay_us = bmp3_delay_us;
+		bmp3->intf_ptr = &dev_addr;
+	}
+	else
+	{
+		rslt = BMP3_E_NULL_PTR;
+	}
+
+	return rslt;
+}
+
+int _write(int32_t file, uint8_t *ptr, int32_t len)
+{
+    for (int i = 0; i < len; i++)
+    {
+        ITM_SendChar(*ptr++);
+    }
+    return len;
+}
+
+
+void StartBMP390Task(void const * argument)
+{
+
+
+
+	//QueueHandle_t xMyQueue;
+
+	// Cast pvParameters to a pointer to QueueHandle_t and dereference it
+	//xMyQueue = *(QueueHandle_t *)argument;
+
+	//MyMessage_t *dataToSend;
+	//dataToSend = malloc(sizeof(MyMessage_t));
+	//dataToSend->message = "BMI Time";
+	//dataToSend->size = 8;
+
+    //if (xQueueSend(xMyQueue, (void *)&dataToSend, portMAX_DELAY) != pdPASS) {
+        // Handle send error (e.g., queue full and timeout occurred)
+    //}
+
+	int8_t rslt = 0;
+	#if defined(READ_SENSOR_DATA)
+	/* Iteration count to run example code */
+	#define ITERATION  UINT8_C(100000)
+	uint8_t loop = 0;
+	uint8_t settings_sel;
+	struct bmp3_dev dev;
+	struct bmp3_data data = { 0 };
+	struct bmp3_settings settings = { 0 };
+	struct bmp3_status status = { { 0 } };
+
+	printf("hello");
+
+	/* Interface reference is given as a parameter
+	*		   For I2C : BMP3_I2C_INTF
+	*		   For SPI : BMP3_SPI_INTF
+	*/
+	#if defined(USE_I2C_INTERFACE)
+	rslt = bmp3_interface_init(&dev, BMP3_I2C_INTF);
+	#elif defined(USE_SPI_INTERFACE)
+	rslt = bmp3_interface_init(&dev, BMP3_SPI_INTF);
+	#endif
+	bmp3_check_rslt("bmp3_interface_init", rslt);
+
+	rslt = bmp3_init(&dev);
+	bmp3_check_rslt("bmp3_init", rslt);
+
+	settings.int_settings.drdy_en = BMP3_ENABLE;
+	settings.press_en = BMP3_ENABLE;
+	settings.temp_en = BMP3_DISABLE;
+
+	settings.odr_filter.press_os = BMP3_OVERSAMPLING_32X;
+	settings.odr_filter.temp_os = BMP3_OVERSAMPLING_2X;
+	settings.odr_filter.odr = BMP3_ODR_12_5_HZ;
+
+	settings_sel = BMP3_SEL_PRESS_EN | BMP3_SEL_PRESS_OS | BMP3_SEL_ODR |
+	   BMP3_SEL_DRDY_EN;
+
+	rslt = bmp3_set_sensor_settings(settings_sel, &settings, &dev);
+	bmp3_check_rslt("bmp3_set_sensor_settings", rslt);
+
+	settings.op_mode = BMP3_MODE_NORMAL;
+	rslt = bmp3_set_op_mode(&settings, &dev);
+	bmp3_check_rslt("bmp3_set_op_mode", rslt);
+
+	double initPressure = 0.0;
+	bool setInitPressure = 0;
+
+	double accumulate = 0.0;
+	int accCounter = 0;
+
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
+
+	while (true)
+	{
+		rslt = bmp3_get_status(&status, &dev);
+		bmp3_check_rslt("bmp3_get_status", rslt);
+
+		printf("test work");
+
+		/* Read temperature and pressure data iteratively based on data ready interrupt */
+		if ((rslt == BMP3_OK) && (status.intr.drdy == BMP3_ENABLE))
+		{
+			/*
+			* First parameter indicates the type of data to be read
+			* BMP3_PRESS_TEMP : To read pressure and temperature data
+			* BMP3_TEMP	   : To read only temperature data
+			* BMP3_PRESS	   : To read only pressure data
+			*/
+			rslt = bmp3_get_sensor_data(BMP3_PRESS_TEMP, &data, &dev);
+			bmp3_check_rslt("bmp3_get_sensor_data", rslt);
+
+			/* NOTE : Read status register again to clear data ready interrupt status */
+			rslt = bmp3_get_status(&status, &dev);
+			bmp3_check_rslt("bmp3_get_status", rslt);
+
+			#ifdef BMP3_FLOAT_COMPENSATION
+			printf("Data[%d]  T: %.2f deg C, P: %.2f Pa\n", loop, (data.temperature), (data.pressure));
+			#else
+			printf("Data[%d]  T: %ld deg C, P: %lu Pa\n", loop, (long int)(int32_t)(data.temperature / 100),
+		  		 (long unsigned int)(uint32_t)(data.pressure / 100));
+			#endif
+
+			if (!setInitPressure && loop > 15) {
+				initPressure = accumulate/accCounter;
+				setInitPressure = true;
+			} else if (!setInitPressure && loop > 5) {
+				accumulate += data.pressure;
+				accCounter++;
+			}
+
+			if(setInitPressure && data.pressure < initPressure-5) {
+				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_RESET);
+				SetServoAngle(0);
+			} else {
+
+				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
+				SetServoAngle(180);
+			}
+
+		    //int required_size = snprintf(NULL, 0, "Data[%d]  T: %.2f deg C, P: %.2f Pa\n", loop, (data.temperature), (data.pressure)) + 1; // +1 for null terminator
+		    //char *dynamic_buffer = (char *)malloc(required_size);
+		    //if (dynamic_buffer == NULL) {
+		        //return;
+		    //}
+
+		    //snprintf(dynamic_buffer, required_size, "Data[%d]  T: %.2f deg C, P: %.2f Pa\n", loop, (data.temperature), (data.pressure));
+
+			//MyMessage_t *newDataToSend;
+			//newDataToSend = malloc(sizeof(MyMessage_t));
+			//newDataToSend->message = dynamic_buffer;
+			//newDataToSend->size = required_size;
+
+		    //if (xQueueSend(xMyQueue, (void *)&newDataToSend, portMAX_DELAY) != pdPASS) {
+		        // Handle send error (e.g., queue full and timeout occurred)
+		    //}
+
+
+
+			loop = loop + 1;
+		} else {
+			//HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2);
+		}
+		HAL_Delay(10);
+	}
+	while(1)
+	{
+	}
+	#endif
+}
+#endif

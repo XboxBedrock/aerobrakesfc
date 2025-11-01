@@ -1,0 +1,52 @@
+/*
+ * servo_task.c
+ *
+ *  Created on: Oct 23, 2025
+ *      Author: sushrut
+ */
+
+
+#include "common_porting.h"
+#include "cmsis_os.h"
+#include "stm32f4xx_hal.h"
+#include "servo_task.h"
+#include "tim.h"
+
+static int16_t currentAngle = 0;
+
+void SetServoAngle(int16_t angle)
+{
+  /* Ensure angle is within valid range */
+  if (angle < 0) angle = 0;
+  if (angle > 180) angle = 180;
+
+  /* Calculate pulse width in microseconds */
+// uint32_t pulse = (angle * 1000 / 180) + 500 + 1000;
+  //uint32_t pulse = (angle * 1000) / 180 + 1000; // Calculate pulse width in microseconds
+  uint32_t pulse = (angle * 1000) / 180 + 1000; // Calculate pulse width in microseconds
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pulse);
+
+  currentAngle = angle;  // Update current angle
+}
+
+
+void StartServoTask(void const * argument)
+{
+	  while (1)
+	  {
+	    /* USER CODE END WHILE */
+
+	    /* USER CODE BEGIN 3 */
+
+
+		  HAL_GPIO_TogglePin (GPIOB, GPIO_PIN_0);
+		  //HAL_GPIO_TogglePin (GPIOB, GPIO_PIN_1);
+		  //HAL_GPIO_TogglePin (GPIOB, GPIO_PIN_2);
+		  SetServoAngle(180);
+		  HAL_Delay (2000);
+		  SetServoAngle(-0);
+		  HAL_Delay (2000);
+
+
+	  }
+}
